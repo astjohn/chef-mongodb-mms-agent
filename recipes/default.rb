@@ -15,17 +15,15 @@ package 'munin-node'
 
 # download
 package 'unzip'
-remote_file '/tmp/10gen-mms-agent.zip' do
-  source 'https://mms.10gen.com/settings/10gen-mms-agent.zip'
+remote_file node[:mms_agent][:tmp_file] do
+  source node[:mms_agent][:source]
+  not_if { File.exist?(node[:mms_agent][:tmp_file]) }
 end
 
 # unzip
 bash 'unzip 10gen-mms-agent' do
-  cwd '/tmp/'
-  code <<-EOH
-    unzip -o -d /usr/local/share/ ./10gen-mms-agent.zip
-  EOH
-  not_if { File.exist?('/usr/local/share/mms-agent') }
+  code "unzip -o -d #{node[:mms_agent][:parent_path]} #{node[:mms_agent][:tmp_file]}"
+  not_if { File.exist?(node[:mms_agent][:install_path]) }
 end
 
 # install pymongo
@@ -44,8 +42,9 @@ end
 # modify settings.py
 ruby_block 'modify settings.py' do
   block do
+    settings_path = node[:mms_agent][:settings_file_path]
     orig_s = ''
-    open('/usr/local/share/mms-agent/settings.py') { |f|
+    open(settings_path) { |f|
       orig_s = f.read
     }
     s = orig_s
@@ -53,20 +52,31 @@ ruby_block 'modify settings.py' do
     s = s.gsub(/@API_KEY@/, api_key)
     s = s.gsub(/@SECRET_KEY@/, secret_key)
     if s != orig_s
-      open('/usr/local/share/mms-agent/settings.py','w') { |f|
+      open(settings_path,'w') { |f|
         f.puts(s)
       }
     end
   end
 end
 
-# runit
-# runit_service 'mms-agent' do
-#   template_name 'mms-agent'
-#   cookbook 'mongodb-mms-agent'
-#   run_restart false
-#   options({
-#     :user => node[:mongodb][:user],
-#     :group => node[:mongodb][:group]
-#   })
-# end
+
+
+template "startup" do
+  mode   node['mms_agent']['init_template_mode']
+  group  node['mms_agent']['init_template_group']
+  owner  node['mms_agent']['init_template_owner']
+  path   node['mms_agent']['template_path']
+  source node['mms_agent']['init_template']
+end
+
+
+
+case node['platform']
+
+when "ubuntu"
+  service "mms-agent" do
+    provider Chef::Provider::Service::Upstart
+    supports :status => true, :start => true, :stop => true
+    action [ :enable, :start ]
+  end
+end
