@@ -33,6 +33,14 @@ python_pip 'pymongo' do
   action :install
 end
 
+api_key, secret_key = if node[:mms_agent][:use_secrets]
+  values = Chef::EncryptedDataBagItem.load(node[:mms_agent][:data_bag_name],
+                                           node[:mms_agent][:data_bag_item])
+  [ values[node[:mms_agent][:api_key_key]], values[node[:mms_agent][:secret_key_key]] ]
+else
+  [ node[:mms_agent][:api_key], node[:mms_agent][:secret_key] ]
+end
+
 # modify settings.py
 ruby_block 'modify settings.py' do
   block do
@@ -42,8 +50,8 @@ ruby_block 'modify settings.py' do
     }
     s = orig_s
     s = s.gsub(/mms\.10gen\.com/, 'mms.10gen.com')
-    s = s.gsub(/@API_KEY@/, node[:mms_agent][:api_key])
-    s = s.gsub(/@SECRET_KEY@/, node[:mms_agent][:secret_key])
+    s = s.gsub(/@API_KEY@/, api_key)
+    s = s.gsub(/@SECRET_KEY@/, secret_key)
     if s != orig_s
       open('/usr/local/share/mms-agent/settings.py','w') { |f|
         f.puts(s)
@@ -53,12 +61,12 @@ ruby_block 'modify settings.py' do
 end
 
 # runit
-runit_service 'mms-agent' do
-  template_name 'mms-agent'
-  cookbook 'mongodb-mms-agent'
-  run_restart false
-  options({
-    :user => node[:mongodb][:user],
-    :group => node[:mongodb][:group]
-  })
-end
+# runit_service 'mms-agent' do
+#   template_name 'mms-agent'
+#   cookbook 'mongodb-mms-agent'
+#   run_restart false
+#   options({
+#     :user => node[:mongodb][:user],
+#     :group => node[:mongodb][:group]
+#   })
+# end
